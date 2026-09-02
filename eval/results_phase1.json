@@ -1,0 +1,244 @@
+{
+  "timestamp": "2026-09-02T23:35:40",
+  "n_documents": 37,
+  "confidence_threshold": 0.7,
+  "detection": {
+    "precision": 0.7977099236641222,
+    "recall": 0.9457013574660633,
+    "f1": 0.8654244306418221,
+    "tp": 209,
+    "fp": 53,
+    "fn": 12,
+    "human_review_rate": 0.8108108108108109
+  },
+  "verification": {
+    "verification_catch_rate": 1.0,
+    "false_alarm_rate": 0.0,
+    "broken_cases": 7,
+    "clean_cases": 30
+  },
+  "per_doc_detection": [
+    {
+      "doc_id": "doc_000",
+      "tp": 5,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_001",
+      "tp": 7,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_002",
+      "tp": 6,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_003",
+      "tp": 5,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_004",
+      "tp": 6,
+      "fp": 3,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_005",
+      "tp": 7,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_006",
+      "tp": 5,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_007",
+      "tp": 7,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_008",
+      "tp": 5,
+      "fp": 8,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_009",
+      "tp": 5,
+      "fp": 3,
+      "fn": 1
+    },
+    {
+      "doc_id": "doc_010",
+      "tp": 6,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_011",
+      "tp": 6,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_012",
+      "tp": 6,
+      "fp": 2,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_013",
+      "tp": 6,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_014",
+      "tp": 5,
+      "fp": 2,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_015",
+      "tp": 7,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_016",
+      "tp": 6,
+      "fp": 3,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_017",
+      "tp": 6,
+      "fp": 4,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_018",
+      "tp": 6,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_020",
+      "tp": 6,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_021",
+      "tp": 5,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_022",
+      "tp": 7,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_023",
+      "tp": 6,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_024",
+      "tp": 6,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_025",
+      "tp": 6,
+      "fp": 0,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_026",
+      "tp": 7,
+      "fp": 2,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_027",
+      "tp": 5,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_028",
+      "tp": 6,
+      "fp": 3,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_029",
+      "tp": 6,
+      "fp": 3,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_030",
+      "tp": 6,
+      "fp": 2,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_031",
+      "tp": 6,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_032",
+      "tp": 7,
+      "fp": 1,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_034",
+      "tp": 6,
+      "fp": 3,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_035",
+      "tp": 6,
+      "fp": 2,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_036",
+      "tp": 2,
+      "fp": 0,
+      "fn": 4
+    },
+    {
+      "doc_id": "doc_038",
+      "tp": 2,
+      "fp": 0,
+      "fn": 4
+    },
+    {
+      "doc_id": "doc_039",
+      "tp": 2,
+      "fp": 0,
+      "fn": 3
+    }
+  ]
+}

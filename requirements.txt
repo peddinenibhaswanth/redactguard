@@ -1,0 +1,31 @@
+# Phase 1 + 2 + demo/API - all free/CPU-only. Phase 3 training deps are
+# separate (requirements-colab.txt) since that runs on Colab, not here.
+langgraph>=0.2.0
+langchain-core>=0.3.0
+pymupdf>=1.24.0
+python-docx>=1.1.0
+docx2pdf>=0.1.8
+pytesseract>=0.3.10
+pillow>=10.0.0
+google-genai>=1.0.0
+groq>=0.11.0
+fastapi>=0.112.0
+uvicorn>=0.30.0
+python-multipart>=0.0.9
+pydantic>=2.8.0
+python-dotenv>=1.0.0
+filetype>=1.2.0
+
+# demo UI
+streamlit>=1.38.0
+requests>=2.32.0
+
+# Phase 3 inference only (loading the LoRA adapter on CPU) - training deps
+# stay in requirements-colab.txt since that part never runs locally.
+peft>=0.12.0
+transformers>=4.44.0
+torch>=2.3.0
+
+# testing
+pytest>=8.3.0
+httpx>=0.27.0

@@ -1,0 +1,10 @@
+# Phase 3 only — install inside the Colab notebook itself (see Cell 1 of
+# colab_sft_train.py / colab_dpo_train.py). Listed here too for reference /
+# reproducibility if you want to pin these outside Colab as well.
+transformers==4.44.0
+peft==0.12.0
+trl==0.9.6
+bitsandbytes==0.43.3
+accelerate==0.33.0
+datasets==2.20.0
+torch>=2.3.0

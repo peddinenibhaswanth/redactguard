@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Tesseract (for OCR extractor import)
+        run: sudo apt-get update && sudo apt-get install -y tesseract-ocr
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        run: |
+          pip install ruff
+          ruff check .
+
+      - name: Run tests
+        # No GEMINI_API_KEY/GROQ_API_KEY in CI on purpose - the LLM
+        # integration test skips itself when keys are absent (see
+        # tests/test_llm_detector_integration.py). Everything else runs.
+        run: pytest tests/ -v

@@ -1,0 +1,35 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+*.egg-info/
+build/
+dist/
+
+# data / outputs (synthetic data is regenerable, keep repo small)
+data/synthetic_docs/*
+data/labels/*
+!data/synthetic_docs/.gitkeep
+!data/labels/.gitkeep
+outputs/
+*.pdf
+!tests/fixtures/*.pdf
+
+# eval results are resume evidence - keep them tracked
+!eval/results_*.json
+
+# model artifacts
+phase3_finetune/*_adapter/
+phase3_finetune/final_adapter/
+*.safetensors
+*.bin
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# logs
+*.log
