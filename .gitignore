@@ -7,6 +7,13 @@ __pycache__/
 build/
 dist/
 
+# Local clone of the Hugging Face Space repo used for deploying demo/.
+# It is its own git repo - if it isn't ignored here, running `git add -A`
+# from the project root swallows it as an accidental submodule (and pulls
+# in any stray copy folder alongside it).
+redactguard/
+space-repo/
+
 # data / outputs (synthetic data is regenerable, keep repo small)
 data/synthetic_docs/*
 data/labels/*

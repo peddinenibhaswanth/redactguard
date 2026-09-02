@@ -14,4 +14,7 @@ google-genai>=1.0.0
 groq>=0.11.0
 pydantic>=2.8.0
 python-dotenv>=1.0.0
-streamlit>=1.63.0
+# Loose floor on purpose: on a Hugging Face Space the Streamlit SDK installs
+# its own version, and a tight pin here can fight with it. Any recent version
+# works - demo/app.py only uses long-stable Streamlit APIs.
+streamlit>=1.36.0
