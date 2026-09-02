@@ -1,0 +1,17 @@
+# Trimmed requirements for the deployed Hugging Face Space - the demo only
+# ever calls the Gemini/Groq API detector (app.detection.llm_detector), never
+# the local fine-tuned model, so torch/transformers/peft (the single biggest
+# chunk of install time and disk space) aren't needed here. Keep this in
+# sync with the relevant subset of the root requirements.txt.
+langgraph>=0.2.0
+langchain-core>=0.3.0
+pymupdf>=1.24.0
+python-docx>=1.1.0
+docx2pdf>=0.1.8
+pytesseract>=0.3.10
+pillow>=10.0.0
+google-genai>=1.0.0
+groq>=0.11.0
+pydantic>=2.8.0
+python-dotenv>=1.0.0
+streamlit>=1.63.0

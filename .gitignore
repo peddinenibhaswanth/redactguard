@@ -10,6 +10,8 @@ dist/
 # data / outputs (synthetic data is regenerable, keep repo small)
 data/synthetic_docs/*
 data/labels/*
+data/sft_train.jsonl
+data/dpo_pairs.jsonl
 !data/synthetic_docs/.gitkeep
 !data/labels/.gitkeep
 outputs/
