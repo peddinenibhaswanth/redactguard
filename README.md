@@ -95,23 +95,35 @@ found the right spans. 1.000 here means every single simulated redaction
 failure in this run was correctly caught, with zero false alarms on the
 genuinely-clean cases.
 
-Worth being upfront about in this run: the last few documents hit Groq's
-free-tier daily token limit mid-run (both Gemini and Groq are shared across
-a lot of testing during development) - the pipeline's fallback and
-per-chunk try/except caught this and degraded to regex-only detection for
-those chunks instead of crashing the whole eval run, which is the exact
-resilience behavior `llm_detector.py` is designed for, observed under real
-rate-limiting rather than only in a unit test. This likely cost a small
-amount of recall on those specific documents (fewer name/indirect-reference
-spans caught) rather than reflecting the detector's normal-conditions
-performance - re-running on a fresh quota would be expected to score
-slightly higher.
+### Free-tier API limits distort results, and that is visible in the data
 
-`eval/results_phase1.json`'s `per_doc_detection` currently stores per-document
-tp/fp/fn counts, not the individual false-positive/false-negative span
-texts - a natural next improvement to make the precision number fully
-self-explanatory would be logging the actual mismatched spans per document,
-not just the counts.
+The synthetic set has since grown to 67 documents, but the headline above
+stays at 37 deliberately. A later 67-document run
+(`eval/results_phase1_67docs_degraded.json`) scored **F1 0.777 with recall
+0.738** — and splitting it by batch shows why that number should not be
+quoted:
+
+| | docs 000–039 | docs 040+ |
+|---|---|---|
+| Recall | 0.991 | **0.432** |
+| False positives | 57 | **8** |
+
+Near-zero false positives alongside collapsed recall is the signature of a
+detector returning *nothing*, not one making mistakes. The documents and
+labels in the second batch were verified correct — the LLM calls failed.
+Only two failures were logged, because `_parse_json_with_retry` returned an
+empty list on unparseable output without saying so, making a failed API call
+indistinguishable from a chunk that genuinely contained no PII. That path now
+logs, so the same failure would be obvious rather than looking like bad data.
+
+The graceful degradation is the intended behaviour — one exhausted quota
+should not abort a whole eval run — but silent degradation is not, and the
+distinction cost real debugging time here.
+
+`per_doc_detection` stores per-document tp/fp/fn counts rather than the
+individual mismatched span texts. Logging the actual false positives and
+negatives per document is the natural next improvement, and would make the
+precision figure self-explanatory.
 
 ## Quickstart
 

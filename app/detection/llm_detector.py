@@ -68,10 +68,19 @@ def _parse_json_with_retry(raw: str, prompt: str, provider: str) -> list:
         pass
 
     retry_prompt = prompt + "\n\nYour previous response was not valid JSON. Return valid JSON only."
-    retry_raw = call_llm(retry_prompt, SYSTEM_PROMPT, provider)
     try:
+        retry_raw = call_llm(retry_prompt, SYSTEM_PROMPT, provider)
         return json.loads(strip_fences(retry_raw))
     except json.JSONDecodeError:
+        # Log it. Returning [] silently makes a chunk with unparseable output
+        # indistinguishable from a chunk that genuinely contained no PII - a
+        # 67-document eval scored recall 0.43 on one batch before this was
+        # visible, and the cause looked like bad data rather than a failed
+        # API call.
+        print(f"[llm_detector] unparseable JSON after retry, treating chunk as empty: {retry_raw[:120]!r}")
+        return []
+    except Exception as e:
+        print(f"[llm_detector] retry call failed, treating chunk as empty: {e}")
         return []
 
 
