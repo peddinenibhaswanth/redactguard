@@ -3,39 +3,47 @@
 # HOW TO USE:
 # 1. Open a new Colab notebook (colab.research.google.com)
 # 2. Runtime -> Change runtime type -> T4 GPU  (do this BEFORE running any cell)
-# 3. Split this file at the "# %%" markers, paste each block into its own cell,
-#    in order. Or upload this whole file and run: !python colab_sft_train.py
-# 4. Upload data/sft_train.jsonl (from Step 4.2 of the guide) to /content/data/
-#    before running the training cell — either drag-and-drop in the Colab file
-#    browser sidebar, or mount Google Drive and copy it in.
+# 3. Split this file at the "# %%" markers and paste each block into its own
+#    Colab cell, in order.
+#    Do NOT upload this file and run `!python colab_sft_train.py` - the
+#    `!pip install` line below is Jupyter cell magic, not valid Python, so
+#    running it as a plain script fails immediately.
+# 4. Upload data/sft_train.jsonl to /content/data/ before the training cell -
+#    drag-and-drop into the Colab file browser sidebar (folder icon on the
+#    left), or mount Google Drive and copy it in.
 #
-# VERSION NOTE: the pins below (transformers 4.44.0, trl 0.9.6, etc.) are
-# mid-2024 releases. If Cell 1 fails to install, or Cell 3/4 throws an
-# unfamiliar error, it's likely Colab's preinstalled CUDA/torch has moved on
-# since these were pinned — check the error message, bump the specific
-# package it names, and re-run from that cell. Don't assume the pins are
-# broken across the board just because one is.
+# Versions are intentionally NOT pinned. This script targets the current TRL
+# API (>=1.0): trainers take `processing_class` rather than `tokenizer`, and
+# SFTConfig takes `max_length` rather than `max_seq_length`. Old pinned
+# versions (trl 0.9.x) use the opposite names and will TypeError here.
 
 # %%
-# --- Cell 1: install deps (Colab has some of these; pin versions to avoid drift) ---
-!pip install -q -U transformers==4.44.0 peft==0.12.0 trl==0.9.6 \
-    bitsandbytes==0.43.3 accelerate==0.33.0 datasets==2.20.0
+# --- Cell 1: install deps ---
+!pip install -q -U transformers peft trl bitsandbytes accelerate datasets
 
 # %%
 # --- Cell 2: imports and config ---
 import torch
-import json
 from datasets import load_dataset
+from peft import LoraConfig, TaskType, get_peft_model
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
-from peft import LoraConfig, get_peft_model, TaskType
-from trl import SFTTrainer, SFTConfig
+from trl import SFTConfig, SFTTrainer
 
 MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
-DATA_PATH = "/content/data/sft_train.jsonl"       # from Step 4.2
+DATA_PATH = "/content/data/sft_train.jsonl"       # from prepare_sft_dataset.py
 OUTPUT_DIR = "/content/redactguard_sft_adapter"
 
 assert torch.cuda.is_available(), \
     "No GPU detected — go to Runtime > Change runtime type > T4 GPU, then re-run."
+
+# A T4 is Turing (compute capability 7.5) and has NO bfloat16 support - that
+# needs Ampere (8.0+). Forcing bf16=True on a T4 errors out or silently
+# degrades, so pick the dtype from what the GPU actually supports.
+BF16_OK = torch.cuda.is_bf16_supported()
+COMPUTE_DTYPE = torch.bfloat16 if BF16_OK else torch.float16
+
+print("GPU:", torch.cuda.get_device_name(0))
+print("bf16 supported:", BF16_OK, "-> training in", "bf16" if BF16_OK else "fp16")
 
 # %%
 # --- Cell 3: load base model in 4-bit (QLoRA) ---
@@ -43,7 +51,7 @@ bnb_config = BitsAndBytesConfig(
     load_in_4bit=True,
     bnb_4bit_use_double_quant=True,
     bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_dtype=torch.bfloat16,
+    bnb_4bit_compute_dtype=COMPUTE_DTYPE,
 )
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
@@ -62,19 +70,18 @@ lora_config = LoraConfig(
     r=16,
     lora_alpha=32,
     lora_dropout=0.05,
-    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],  # Qwen2.5 attention proj names
+    target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],  # Qwen2.5 attention projections
     task_type=TaskType.CAUSAL_LM,
 )
 model = get_peft_model(model, lora_config)
 model.print_trainable_parameters()
-# Sanity check: this should print well under 1% of total params as trainable.
-# If it prints 100%, target_modules names are wrong for the loaded model's
-# architecture — check model.named_modules() to find the correct proj names.
+# Sanity check: trainable params should be well under 1% of the total.
+# If it prints ~100%, target_modules doesn't match this architecture -
+# inspect model.named_modules() to find the real projection names.
 
 # %%
 # --- Cell 5: load dataset ---
-# Expected format: sft_train.jsonl, one JSON object per line:
-#   {"text": "<full formatted SFT_TEMPLATE string from Step 4.2>"}
+# Expected format: one JSON object per line, {"text": "<formatted ChatML example>"}
 dataset = load_dataset("json", data_files=DATA_PATH, split="train")
 print(f"Loaded {len(dataset)} SFT examples")
 print("Example:\n", dataset[0]["text"][:500])
@@ -89,9 +96,10 @@ sft_config = SFTConfig(
     learning_rate=2e-4,
     logging_steps=10,
     save_strategy="epoch",
-    bf16=True,
+    bf16=BF16_OK,
+    fp16=not BF16_OK,
     dataset_text_field="text",
-    max_seq_length=512,
+    max_length=512,           # named max_seq_length in trl < 1.0
     report_to="none",
 )
 
@@ -99,7 +107,7 @@ trainer = SFTTrainer(
     model=model,
     args=sft_config,
     train_dataset=dataset,
-    tokenizer=tokenizer,
+    processing_class=tokenizer,   # named `tokenizer` in trl < 1.0
 )
 
 trainer.train()
@@ -109,12 +117,11 @@ trainer.train()
 trainer.save_model(OUTPUT_DIR)
 tokenizer.save_pretrained(OUTPUT_DIR)
 print(f"SFT adapter saved to {OUTPUT_DIR}")
-print("Next: zip this folder and download it, or copy to Drive, then run "
-      "colab_dpo_train.py pointing SFT_ADAPTER_PATH at this folder.")
+print("Next: run colab_dpo_train.py in this same session, with "
+      "SFT_ADAPTER_PATH pointing at this folder.")
 
 # %%
-# --- Cell 8: quick manual sanity check before moving to DPO ---
-from peft import PeftModel
+# --- Cell 8: quick sanity check before moving to DPO ---
 test_input = tokenizer.apply_chat_template(
     [{"role": "system", "content": "You are a PII detection specialist. Given a text span from a document, classify whether it contains sensitive information."},
      {"role": "user", "content": 'Document context: "Contact the director at ramesh.kumar@example.com"\nSpan to classify: "ramesh.kumar@example.com"'}],
@@ -124,5 +131,4 @@ inputs = tokenizer(test_input, return_tensors="pt").to(model.device)
 out = model.generate(**inputs, max_new_tokens=60, do_sample=False)
 print(tokenizer.decode(out[0], skip_special_tokens=True))
 # Expect roughly: {"sensitive": true, "category": "email", "confidence": ...}
-# If output is gibberish or ignores the JSON format, increase epochs or check
-# that sft_train.jsonl actually has enough examples (Step 4.2 floor: 300-600).
+# Gibberish or ignored JSON format means too few examples or too few epochs.
