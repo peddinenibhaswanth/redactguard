@@ -25,7 +25,7 @@
 # --- Cell 2: imports and config ---
 import torch
 from datasets import load_dataset
-from peft import LoraConfig, TaskType, get_peft_model
+from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import SFTConfig, SFTTrainer
 
@@ -65,7 +65,14 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 
 # %%
-# --- Cell 4: attach LoRA adapters ---
+# --- Cell 4: prepare for k-bit training, then attach LoRA adapters ---
+# prepare_model_for_kbit_training is NOT optional for QLoRA. It casts the
+# layernorms and upcasts the LM head to fp32, which is exactly what keeps
+# fp16 training numerically stable on a 4-bit base. Skipping it and training
+# in fp16 (which a T4 forces, since it has no bf16) makes the model diverge:
+# loss blows up and generation collapses into a single repeated token.
+model = prepare_model_for_kbit_training(model, use_gradient_checkpointing=True)
+
 lora_config = LoraConfig(
     r=16,
     lora_alpha=32,
@@ -93,8 +100,15 @@ sft_config = SFTConfig(
     per_device_train_batch_size=4,
     gradient_accumulation_steps=4,
     num_train_epochs=3,
-    learning_rate=2e-4,
-    logging_steps=10,
+    # 1e-4 rather than the 2e-4 often quoted for QLoRA: that figure assumes
+    # bf16, and fp16 (forced by the T4) has a much narrower dynamic range.
+    # Combined with warmup below this trains just as well and stops the loss
+    # from spiking in the first few steps.
+    learning_rate=1e-4,
+    warmup_ratio=0.03,
+    max_grad_norm=0.3,
+    optim="paged_adamw_8bit",   # standard QLoRA optimizer; also eases T4 memory
+    logging_steps=5,            # frequent enough to actually see a loss curve
     save_strategy="epoch",
     bf16=BF16_OK,
     fp16=not BF16_OK,
@@ -111,6 +125,15 @@ trainer = SFTTrainer(
 )
 
 trainer.train()
+
+# Read the loss column printed above before continuing. It should fall from
+# roughly 1-2 down toward ~0.1-0.4. If it goes to nan, or sits flat, or jumps
+# by orders of magnitude, training diverged - do not proceed to DPO on a
+# diverged checkpoint. Halve the learning rate and re-run this cell.
+final_loss = trainer.state.log_history[-1].get("train_loss")
+print("final train_loss:", final_loss)
+assert final_loss is not None and final_loss == final_loss, \
+    "train_loss is nan - training diverged. Lower learning_rate and re-run."
 
 # %%
 # --- Cell 7: save adapter (small — tens of MB, not the full model) ---

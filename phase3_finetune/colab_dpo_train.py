@@ -24,7 +24,7 @@
 # --- Cell 2: imports and config ---
 import torch
 from datasets import load_dataset
-from peft import PeftModel
+from peft import PeftModel, prepare_model_for_kbit_training
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 from trl import DPOConfig, DPOTrainer
 
@@ -62,6 +62,10 @@ base_model = AutoModelForCausalLM.from_pretrained(
     device_map="auto",
 )
 
+# Same fp32 layernorm/LM-head casting as Step A - required for stable fp16
+# training on a 4-bit base, and just as necessary here as it is for SFT.
+base_model = prepare_model_for_kbit_training(base_model, use_gradient_checkpointing=True)
+
 # Load the SFT LoRA weights on top of the base model - this is what DPO
 # refines. is_trainable=True is required, otherwise the adapter loads frozen
 # and training silently updates nothing.
@@ -88,6 +92,9 @@ dpo_config = DPOConfig(
     gradient_accumulation_steps=4,
     num_train_epochs=2,
     learning_rate=5e-5,
+    warmup_ratio=0.03,
+    max_grad_norm=0.3,
+    optim="paged_adamw_8bit",
     logging_steps=5,
     save_strategy="epoch",
     bf16=BF16_OK,
