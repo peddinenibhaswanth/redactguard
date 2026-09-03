@@ -6,8 +6,7 @@ nothing sensitive survived, looping back to redaction automatically if it
 did. Most redaction tools trust the redaction step blindly; this one treats
 that trust as the actual bug to design around.
 
-**Live demo:** not yet deployed — see [demo/DEPLOYMENT.md](demo/DEPLOYMENT.md) for a free Streamlit Community Cloud deploy. Once deployed, put the link here.
-**[Implementation guide](docs/IMPLEMENTATION_GUIDE.md)** — full design rationale, written before any code.
+**[▶ Live demo](https://redactguard-66iybemnkbkxq6ngdvxqkx.streamlit.app/)** · **[Sample document to try it with](samples/)** · **[Implementation guide](docs/IMPLEMENTATION_GUIDE.md)** (design rationale, written before any code)
 
 ## Why this exists
 
