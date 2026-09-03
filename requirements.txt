@@ -20,11 +20,10 @@ filetype>=1.2.0
 streamlit>=1.38.0
 requests>=2.32.0
 
-# Phase 3 inference only (loading the LoRA adapter on CPU) - training deps
-# stay in requirements-colab.txt since that part never runs locally.
-peft>=0.12.0
-transformers>=4.44.0
-torch>=2.3.0
+# NOTE: Phase 3 local-model inference deps (torch/transformers/peft) are
+# deliberately NOT here - see requirements-phase3.txt. They add ~2GB, which
+# blows the resource limit on free demo hosts and slows CI, and nothing in
+# Phase 1/2, the API, the demo, or the test suite imports them.
 
 # testing
 pytest>=8.3.0

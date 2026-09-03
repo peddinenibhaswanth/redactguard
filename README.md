@@ -6,7 +6,7 @@ nothing sensitive survived, looping back to redaction automatically if it
 did. Most redaction tools trust the redaction step blindly; this one treats
 that trust as the actual bug to design around.
 
-**Live demo:** not yet deployed — see [demo/README_SPACE.md](demo/README_SPACE.md) to deploy to Hugging Face Spaces (a few minutes, needs your own free HF account). Once deployed, put the link here.
+**Live demo:** not yet deployed — see [demo/DEPLOYMENT.md](demo/DEPLOYMENT.md) for a free Streamlit Community Cloud deploy. Once deployed, put the link here.
 **[Implementation guide](docs/IMPLEMENTATION_GUIDE.md)** — full design rationale, written before any code.
 
 ## Why this exists
@@ -180,6 +180,13 @@ replaces the API-based LLM detector with a small locally fine-tuned model
 (Qwen2.5-0.5B-Instruct, QLoRA), trained via SFT then DPO on a free-tier
 Colab T4 GPU — CPU inference afterward, so sensitive documents never leave
 the machine once this node is swapped in.
+
+Phase 3 local inference needs extra packages (~2GB), deliberately kept out of
+the default install so the demo and CI stay light:
+
+```bash
+pip install -r requirements-phase3.txt
+```
 
 ```bash
 python -m phase3_finetune.prepare_sft_dataset

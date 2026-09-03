@@ -19,6 +19,20 @@ import streamlit as st
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Streamlit Community Cloud supplies secrets through st.secrets, while
+# app/config.py reads plain environment variables - and it reads them at
+# import time, into module-level constants. So the bridge has to happen
+# BEFORE app.config is imported below, or the keys read as empty strings and
+# detection silently degrades to regex-only. Hosts that already provide real
+# env vars (Docker, a local .env) are left untouched.
+for _key in ("GEMINI_API_KEY", "GROQ_API_KEY"):
+    if not os.environ.get(_key):
+        try:
+            if _key in st.secrets:
+                os.environ[_key] = str(st.secrets[_key])
+        except Exception:
+            pass  # no secrets.toml on this host - env vars are the source instead
+
 from app.config import OUTPUT_DIR  # noqa: E402
 from app.main import run_pipeline  # noqa: E402
 

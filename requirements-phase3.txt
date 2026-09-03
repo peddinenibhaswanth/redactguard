@@ -1,0 +1,15 @@
+# Phase 3 LOCAL INFERENCE only - loading the fine-tuned LoRA adapter on CPU
+# via app/detection/local_model_detector.py. Install on top of
+# requirements.txt, and only if you've actually completed Phase 3 training:
+#
+#   pip install -r requirements.txt -r requirements-phase3.txt
+#
+# Kept separate because these are ~2GB and nothing in Phase 1/2, the API, the
+# demo, or the tests imports them - so the default install stays light enough
+# for free demo hosts and fast CI.
+#
+# Phase 3 TRAINING deps are different again (requirements-colab.txt), since
+# training runs on Colab, never locally.
+peft>=0.12.0
+transformers>=4.44.0
+torch>=2.3.0
