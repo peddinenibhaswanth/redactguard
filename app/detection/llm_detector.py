@@ -94,13 +94,16 @@ def detect_sensitive_spans(
 
     already_texts = {s.text.lower() for s in already_found}
     results = []
+    chunks = _chunk_text(text)
+    failed_chunks = 0
 
-    for chunk in _chunk_text(text):
+    for chunk in chunks:
         prompt = f'Document excerpt:\n"""\n{chunk}\n"""'
         try:
             raw = call_llm(prompt, SYSTEM_PROMPT, provider)
         except Exception as e:
-            print(f"[llm_detector] both providers failed on a chunk: {e}")
+            failed_chunks += 1
+            print(f"[llm_detector] every provider failed on a chunk: {e}")
             continue
 
         parsed = _parse_json_with_retry(raw, prompt, provider)
@@ -119,6 +122,17 @@ def detect_sensitive_spans(
                     "confidence": float(item.get("confidence", 0.5)),
                 }
             )
+
+    # Raise rather than return [] when nothing got through. An empty list
+    # makes total provider exhaustion look identical to a document that
+    # genuinely contains no PII - which is how a 67-document eval came to
+    # report recall 0.43 on one batch and look like a detection problem
+    # rather than exhausted API quota.
+    if chunks and failed_chunks == len(chunks):
+        raise RuntimeError(
+            f"LLM detection failed on all {len(chunks)} chunk(s) - every provider exhausted. "
+            f"Output would be regex-only and must not be scored as detection results."
+        )
 
     return results
 

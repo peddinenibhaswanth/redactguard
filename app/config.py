@@ -25,6 +25,20 @@ EVAL_GENERATOR_PROVIDER = os.getenv("EVAL_GENERATOR_PROVIDER", "groq")  # "gemin
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
 
+# Generic OpenAI-compatible provider - OpenRouter, Together, Mistral,
+# Cerebras, a local vLLM, anything speaking /chat/completions. Adding a
+# provider is configuration, not code. Left blank the chain simply skips it.
+OPENAI_COMPAT_API_KEY = os.getenv("OPENAI_COMPAT_API_KEY", os.getenv("CEREBRAS_API_KEY", ""))
+OPENAI_COMPAT_BASE_URL = os.getenv("OPENAI_COMPAT_BASE_URL", "")
+OPENAI_COMPAT_MODEL = os.getenv("OPENAI_COMPAT_MODEL", "")
+
+# Order providers are tried in. Every one is attempted before giving up -
+# a single fallback was not enough when both free tiers hit their daily
+# limits mid-eval and detection silently degraded to regex-only.
+PROVIDER_CHAIN = [
+    p.strip() for p in os.getenv("PROVIDER_CHAIN", "gemini,groq,openai_compat").split(",") if p.strip()
+]
+
 # Cap on redact->verify retries before giving up and flagging for manual handling.
 MAX_REDACT_RETRIES = int(os.getenv("MAX_REDACT_RETRIES", "2"))
 
