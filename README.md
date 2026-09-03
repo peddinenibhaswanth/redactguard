@@ -128,6 +128,13 @@ you'll process scanned documents — this is the most common setup failure.
 Windows: UB-Mannheim build, add to PATH. Mac: `brew install tesseract`.
 Linux: `apt install tesseract-ocr`. Verify with `tesseract --version`.
 
+A synthetic sample document is included so you can try it immediately without
+hunting for a file with PII in it — see [samples/](samples/):
+
+```bash
+python -m app.main --file samples/sample_loan_agreement.pdf
+```
+
 ```bash
 # CLI
 python -m app.main --file path/to/document.pdf

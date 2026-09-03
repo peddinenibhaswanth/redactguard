@@ -24,6 +24,10 @@ data/dpo_pairs.jsonl
 outputs/
 *.pdf
 !tests/fixtures/*.pdf
+# The sample document is committed on purpose - it's what someone visiting
+# the live demo uploads to try it, and it's regenerable via
+# samples/generate_sample.py.
+!samples/*.pdf
 
 # eval results are resume evidence - keep them tracked
 !eval/results_*.json
