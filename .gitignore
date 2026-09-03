@@ -46,3 +46,11 @@ Thumbs.db
 
 # logs
 *.log
+
+# Held-out test split. Kept out of the SFT/DPO training corpus by living in a
+# separate directory - prepare_sft_dataset.py only ever reads
+# data/synthetic_docs, so these documents cannot leak into training.
+data/heldout_docs/*
+data/heldout_labels/*
+!data/heldout_docs/.gitkeep
+!data/heldout_labels/.gitkeep

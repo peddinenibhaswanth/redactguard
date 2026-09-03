@@ -124,5 +124,11 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--n", type=int, default=50, help="Number of synthetic documents to generate.")
     parser.add_argument("--provider", default=EVAL_GENERATOR_PROVIDER, choices=["gemini", "groq"])
+    parser.add_argument(
+        "--out-docs", default="data/synthetic_docs",
+        help="Where to write documents. Use data/heldout_docs to build a test split that "
+             "prepare_sft_dataset.py will never train on.",
+    )
+    parser.add_argument("--out-labels", default="data/labels")
     args = parser.parse_args()
-    generate_dataset(args.n, provider=args.provider)
+    generate_dataset(args.n, out_dir_docs=args.out_docs, out_dir_labels=args.out_labels, provider=args.provider)

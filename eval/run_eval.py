@@ -82,7 +82,12 @@ def _get_detector(name: str):
     raise ValueError(f"unknown detector {name!r}")
 
 
-def run_detection_eval(doc_ids: list, detector: str = "api") -> dict:
+def run_detection_eval(
+    doc_ids: list,
+    detector: str = "api",
+    docs_dir: str = DATA_DOCS_DIR,
+    labels_dir: str = DATA_LABELS_DIR,
+) -> dict:
     detect_context_spans = _get_detector(detector)
     all_tp = all_fp = all_fn = 0
     docs_predicted_spans = []
@@ -90,9 +95,9 @@ def run_detection_eval(doc_ids: list, detector: str = "api") -> dict:
 
     for i, doc_id in enumerate(doc_ids):
         print(f"  [detection {i + 1}/{len(doc_ids)}] {doc_id}", flush=True)
-        with open(os.path.join(DATA_DOCS_DIR, f"{doc_id}.txt"), encoding="utf-8") as f:
+        with open(os.path.join(docs_dir, f"{doc_id}.txt"), encoding="utf-8") as f:
             text = f.read()
-        with open(os.path.join(DATA_LABELS_DIR, f"{doc_id}.json"), encoding="utf-8") as f:
+        with open(os.path.join(labels_dir, f"{doc_id}.json"), encoding="utf-8") as f:
             label = json.load(f)
 
         fake_doc = _text_to_fake_document(text, doc_id)
@@ -153,15 +158,20 @@ def _render_text_to_pdf(text: str, out_path: str) -> None:
     doc.close()
 
 
-def run_verification_eval(doc_ids: list, out_dir: str = "eval/_tmp_pdfs") -> dict:
+def run_verification_eval(
+    doc_ids: list,
+    out_dir: str = "eval/_tmp_pdfs",
+    docs_dir: str = DATA_DOCS_DIR,
+    labels_dir: str = DATA_LABELS_DIR,
+) -> dict:
     os.makedirs(out_dir, exist_ok=True)
     results = []
 
     for i, doc_id in enumerate(doc_ids):
         print(f"  [verification {i + 1}/{len(doc_ids)}] {doc_id}", flush=True)
-        with open(os.path.join(DATA_DOCS_DIR, f"{doc_id}.txt"), encoding="utf-8") as f:
+        with open(os.path.join(docs_dir, f"{doc_id}.txt"), encoding="utf-8") as f:
             text = f.read()
-        with open(os.path.join(DATA_LABELS_DIR, f"{doc_id}.json"), encoding="utf-8") as f:
+        with open(os.path.join(labels_dir, f"{doc_id}.json"), encoding="utf-8") as f:
             label = json.load(f)
 
         pdf_path = os.path.join(out_dir, f"{doc_id}.pdf")
@@ -227,33 +237,51 @@ def main():
         help="Skip the verification-catch-rate pass. It exercises redact/verify, "
              "which is detector-independent, so it only needs running once.",
     )
+    parser.add_argument(
+        "--docs-dir", default=DATA_DOCS_DIR,
+        help="Point at data/heldout_docs to score the fine-tuned model on documents "
+             "it was never trained on. data/synthetic_docs IS the SFT/DPO training "
+             "corpus, so scoring a local adapter there measures memorisation.",
+    )
+    parser.add_argument("--labels-dir", default=DATA_LABELS_DIR)
     args = parser.parse_args()
     results_path = args.out or RESULTS_PATH
+    docs_dir, labels_dir = args.docs_dir, args.labels_dir
 
-    doc_ids = sorted(os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(DATA_DOCS_DIR, "*.txt")))
+    doc_ids = sorted(os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(docs_dir, "*.txt")))
     if args.limit:
         doc_ids = doc_ids[: args.limit]
 
     if not doc_ids:
         raise SystemExit(
-            f"No synthetic docs found in {DATA_DOCS_DIR}. Run "
+            f"No synthetic docs found in {docs_dir}. Run "
             f"`python -m eval.generate_synthetic_data --n 50` first."
         )
 
-    print(f"Running eval over {len(doc_ids)} synthetic documents (detector={args.detector})...")
+    held_out = os.path.abspath(docs_dir) != os.path.abspath(DATA_DOCS_DIR)
+    print(f"Running eval over {len(doc_ids)} documents from {docs_dir} (detector={args.detector})...")
+    if args.detector == "local" and not held_out:
+        print("  WARNING: scoring a fine-tuned adapter on its own training corpus - "
+              "these numbers measure memorisation, not generalisation.")
 
     t0 = time.time()
-    detection_results = run_detection_eval(doc_ids, detector=args.detector)
+    detection_results = run_detection_eval(
+        doc_ids, detector=args.detector, docs_dir=docs_dir, labels_dir=labels_dir
+    )
     detection_seconds = time.time() - t0
 
     verification_results = (
-        None if args.skip_verification else run_verification_eval(doc_ids)
+        None
+        if args.skip_verification
+        else run_verification_eval(doc_ids, docs_dir=docs_dir, labels_dir=labels_dir)
     )
 
     results = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "detector": args.detector,
         "adapter_path": LOCAL_ADAPTER_PATH if args.detector == "local" else None,
+        "docs_dir": docs_dir,
+        "held_out_from_training": held_out,
         "n_documents": len(doc_ids),
         "confidence_threshold": CONFIDENCE_THRESHOLD,
         "detection": {k: v for k, v in detection_results.items() if k != "per_doc"},
