@@ -105,7 +105,10 @@ sft_config = SFTConfig(
     # Combined with warmup below this trains just as well and stops the loss
     # from spiking in the first few steps.
     learning_rate=1e-4,
-    warmup_ratio=0.03,
+    # ~150 total steps here (808 examples / effective batch 16, 3 epochs), so
+    # 10 warmup steps is a short ramp. This version of SFTConfig takes
+    # warmup_steps; warmup_ratio does not exist on it.
+    warmup_steps=10,
     max_grad_norm=0.3,
     optim="paged_adamw_8bit",   # standard QLoRA optimizer; also eases T4 memory
     logging_steps=5,            # frequent enough to actually see a loss curve
