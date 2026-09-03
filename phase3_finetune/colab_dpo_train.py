@@ -114,6 +114,11 @@ trainer = DPOTrainer(
 
 trainer.train()
 
+# DPO loss starts near 0.693 (= -ln 0.5, the model having no preference) and
+# should fall as it learns to prefer "chosen". Also watch rewards/accuracies
+# in the log: it should climb above 0.5 toward 1.0. A flat 0.693 with
+# accuracy stuck at 0.5 means DPO isn't shifting anything - raise beta.
+
 # %%
 # --- Cell 6: save final adapter ---
 trainer.save_model(OUTPUT_DIR)
@@ -131,15 +136,31 @@ from google.colab import files
 files.download("/content/redactguard_dpo_adapter.zip")
 
 # %%
-# --- Cell 8: before/after sanity check on an ambiguous case ---
+# --- Cell 8: sanity check on an ambiguous case ---
+# Same rule as Step A's Cell 8: eval() first. Generating straight out of
+# train() leaves dropout active and the cache off, and greedy decoding then
+# collapses into a repeated token no matter how good the checkpoint is.
+model.eval()
+model.config.use_cache = True
+
 test_input = tokenizer.apply_chat_template(
     [{"role": "system", "content": "You are a PII detection specialist. Given a text span from a document, classify whether it contains sensitive information."},
      {"role": "user", "content": 'Document context: "The property was transferred to the promoter\'s spouse last year."\nSpan to classify: "the promoter\'s spouse"'}],
     tokenize=False, add_generation_prompt=True,
 )
 inputs = tokenizer(test_input, return_tensors="pt").to(model.device)
-out = model.generate(**inputs, max_new_tokens=60, do_sample=False)
-print(tokenizer.decode(out[0], skip_special_tokens=True))
+
+with torch.no_grad():
+    out = model.generate(
+        **inputs,
+        max_new_tokens=60,
+        do_sample=False,
+        eos_token_id=tokenizer.convert_tokens_to_ids("<|im_end|>"),
+        pad_token_id=tokenizer.pad_token_id,
+    )
+
+generated = out[0][inputs["input_ids"].shape[1]:]
+print("MODEL OUTPUT:", repr(tokenizer.decode(generated, skip_special_tokens=True)))
 # Expect: {"sensitive": true, ...} — DPO should push toward flagging this
 # indirect reference, which plain SFT often misses since it is not a clean
 # pattern match.
