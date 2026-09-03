@@ -17,7 +17,7 @@ import os
 import random
 import re
 
-from phase3_finetune.prompt_template import context_window, format_full_example
+from phase3_finetune.prompt_template import context_window, format_prompt
 
 MIN_RECOMMENDED_EXAMPLES = 300
 
@@ -35,19 +35,28 @@ def _sample_negative_spans(text: str, ground_truth_spans: list, n: int) -> list:
 
 
 def build_sft_examples(doc_text: str, label: dict) -> list:
+    """Emits {"prompt", "completion"} records rather than one flat "text"
+    field. TRL treats a prompt-completion dataset as completion-only loss by
+    default, so gradients come only from the short JSON answer.
+
+    With a single "text" field the loss covers the whole sequence, which on
+    this task means the model spends nearly all its capacity learning to
+    reproduce the long, varied document context and almost none learning the
+    answer - training loss plateaus high and generation stays unreliable.
+    """
     examples = []
     ground_truth = label["ground_truth_spans"]
 
     for gt in ground_truth:
         context = context_window(doc_text, gt["start_char"], gt["end_char"])
         label_json = json.dumps({"sensitive": True, "category": gt.get("category", "other"), "confidence": 1.0})
-        examples.append(format_full_example(context, gt["text"], label_json))
+        examples.append({"prompt": format_prompt(context, gt["text"]), "completion": label_json})
 
     negatives = _sample_negative_spans(doc_text, ground_truth, n=len(ground_truth))
     for start, end, neg_text in negatives:
         context = context_window(doc_text, start, end)
         label_json = json.dumps({"sensitive": False, "category": "none", "confidence": 1.0})
-        examples.append(format_full_example(context, neg_text, label_json))
+        examples.append({"prompt": format_prompt(context, neg_text), "completion": label_json})
 
     return examples
 
@@ -72,7 +81,7 @@ def build_dataset(
     os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
     with open(out_path, "w", encoding="utf-8") as f:
         for ex in all_examples:
-            f.write(json.dumps({"text": ex}) + "\n")
+            f.write(json.dumps(ex) + "\n")
 
     print(f"Wrote {len(all_examples)} SFT examples to {out_path}")
     if len(all_examples) < MIN_RECOMMENDED_EXAMPLES:

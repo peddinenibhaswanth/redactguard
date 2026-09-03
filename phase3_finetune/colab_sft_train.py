@@ -88,10 +88,16 @@ model.print_trainable_parameters()
 
 # %%
 # --- Cell 5: load dataset ---
-# Expected format: one JSON object per line, {"text": "<formatted ChatML example>"}
+# Expected format: one JSON object per line, {"prompt": ..., "completion": ...}
+# TRL recognises this as a prompt-completion dataset and masks the prompt
+# tokens from the loss automatically.
 dataset = load_dataset("json", data_files=DATA_PATH, split="train")
 print(f"Loaded {len(dataset)} SFT examples")
-print("Example:\n", dataset[0]["text"][:500])
+print("Columns:", dataset.column_names)
+assert set(dataset.column_names) == {"prompt", "completion"}, \
+    "Expected prompt/completion columns - regenerate with prepare_sft_dataset.py"
+print("\nPROMPT:\n", dataset[0]["prompt"][:400])
+print("\nCOMPLETION:\n", dataset[0]["completion"])
 
 # %%
 # --- Cell 6: train ---
@@ -115,7 +121,9 @@ sft_config = SFTConfig(
     save_strategy="epoch",
     bf16=BF16_OK,
     fp16=not BF16_OK,
-    dataset_text_field="text",
+    # No dataset_text_field: the dataset is prompt/completion, which TRL
+    # detects and trains with completion-only loss (prompt tokens masked).
+    # Declaring a text field here would switch it back to full-sequence loss.
     max_length=512,           # named max_seq_length in trl < 1.0
     report_to="none",
 )
@@ -148,13 +156,31 @@ print("Next: run colab_dpo_train.py in this same session, with "
 
 # %%
 # --- Cell 8: quick sanity check before moving to DPO ---
+# model.eval() is load-bearing. Immediately after train() the model is still
+# in training mode, so LoRA dropout is live and use_cache is off. Greedy
+# decoding under those conditions degenerates into a single repeated token -
+# which looks exactly like a broken checkpoint even when the weights are fine.
+model.eval()
+model.config.use_cache = True
+
 test_input = tokenizer.apply_chat_template(
     [{"role": "system", "content": "You are a PII detection specialist. Given a text span from a document, classify whether it contains sensitive information."},
      {"role": "user", "content": 'Document context: "Contact the director at ramesh.kumar@example.com"\nSpan to classify: "ramesh.kumar@example.com"'}],
     tokenize=False, add_generation_prompt=True,
 )
 inputs = tokenizer(test_input, return_tensors="pt").to(model.device)
-out = model.generate(**inputs, max_new_tokens=60, do_sample=False)
-print(tokenizer.decode(out[0], skip_special_tokens=True))
-# Expect roughly: {"sensitive": true, "category": "email", "confidence": ...}
-# Gibberish or ignored JSON format means too few examples or too few epochs.
+
+with torch.no_grad():
+    out = model.generate(
+        **inputs,
+        max_new_tokens=60,
+        do_sample=False,
+        eos_token_id=tokenizer.convert_tokens_to_ids("<|im_end|>"),
+        pad_token_id=tokenizer.pad_token_id,
+    )
+
+# Decode ONLY the newly generated tokens - decoding out[0] echoes the whole
+# prompt back and buries the part being tested.
+generated = out[0][inputs["input_ids"].shape[1]:]
+print("MODEL OUTPUT:", repr(tokenizer.decode(generated, skip_special_tokens=True)))
+# Expect roughly: {"sensitive": true, "category": "email", "confidence": 1.0}
