@@ -15,6 +15,7 @@ and has the generation prompt return the ground-truth spans it inserted, at
 generation time.
 """
 import argparse
+import glob
 import json
 import os
 
@@ -63,6 +64,20 @@ def generate_one(doc_type: str, provider: str = EVAL_GENERATOR_PROVIDER) -> dict
     return {"document_text": text, "ground_truth_spans": fixed_spans}
 
 
+def _next_doc_index(out_dir_docs: str) -> int:
+    """Highest existing doc_NNN index + 1, so a second run ADDS to the set
+    instead of overwriting it. Without this, every run restarts at doc_000
+    and silently destroys the documents an existing eval was measured on."""
+    existing = glob.glob(os.path.join(out_dir_docs, "doc_*.txt"))
+    indices = []
+    for path in existing:
+        stem = os.path.splitext(os.path.basename(path))[0]
+        suffix = stem.removeprefix("doc_")
+        if suffix.isdigit():
+            indices.append(int(suffix))
+    return max(indices) + 1 if indices else 0
+
+
 def generate_dataset(
     n_docs: int,
     out_dir_docs: str = "data/synthetic_docs",
@@ -72,8 +87,13 @@ def generate_dataset(
     os.makedirs(out_dir_docs, exist_ok=True)
     os.makedirs(out_dir_labels, exist_ok=True)
 
+    start_index = _next_doc_index(out_dir_docs)
+    if start_index:
+        print(f"Found {start_index} existing documents - appending, starting at doc_{start_index:03d}")
+
     generated = 0
-    for i in range(n_docs):
+    for offset in range(n_docs):
+        i = start_index + offset
         doc_type = DOC_TYPES[i % len(DOC_TYPES)]
         try:
             data = generate_one(doc_type, provider)
