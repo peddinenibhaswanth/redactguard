@@ -72,13 +72,28 @@ def _classify_span(context: str, span_text: str) -> dict:
     inputs = tokenizer(prompt, return_tensors="pt")
 
     with torch.no_grad():
-        out = model.generate(**inputs, max_new_tokens=60, do_sample=False)
+        out = model.generate(
+            **inputs,
+            max_new_tokens=60,
+            do_sample=False,
+            eos_token_id=tokenizer.convert_tokens_to_ids("<|im_end|>"),
+            pad_token_id=tokenizer.pad_token_id,
+        )
     decoded = tokenizer.decode(out[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True)
 
-    try:
-        return json.loads(strip_fences(decoded.strip()))
-    except json.JSONDecodeError:
-        return {"sensitive": False, "category": "other", "confidence": 0.0}
+    # Extract the first {...} block rather than parsing the whole string. The
+    # fine-tuned model reliably emits the right JSON but sometimes appends a
+    # stray character after it (a trailing "." has been observed), and
+    # json.loads on the raw string rejects that as "Extra data" - which would
+    # silently downgrade every span to not-sensitive via the fallback below.
+    cleaned = strip_fences(decoded.strip())
+    match = re.search(r"\{.*?\}", cleaned, re.S)
+    if match:
+        try:
+            return json.loads(match.group(0))
+        except json.JSONDecodeError:
+            pass
+    return {"sensitive": False, "category": "other", "confidence": 0.0}
 
 
 def detect_sensitive_spans(text: str, already_found: List[TextSpan]) -> List[dict]:
