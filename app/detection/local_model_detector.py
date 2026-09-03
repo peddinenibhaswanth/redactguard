@@ -25,6 +25,7 @@ from typing import List
 
 from app.config import CONFIDENCE_THRESHOLD, LOCAL_ADAPTER_PATH
 from app.detection.base import FlaggedSpan, build_page_text_index, merge_bbox
+from app.detection.candidates import iter_candidates
 from app.extraction.base import ExtractedDocument, TextSpan
 from app.llm_client import strip_fences
 from phase3_finetune.prompt_template import SYSTEM_MSG, context_window
@@ -42,13 +43,6 @@ VALID_CATEGORIES = {
     "name", "address", "indirect_reference", "email", "pan", "aadhaar",
     "ifsc", "phone", "date_of_birth", "none", "other",
 }
-
-_CANDIDATE_PATTERN = re.compile(
-    r"(?:[A-Z][a-zA-Z']*\s?){1,4}"  # capitalized phrases (names, places)
-    r"|[\w.+-]+@[\w.-]+\.\w+"  # emails, in case regex_detector's category config differs
-    r"|\b\d[\d\s-]{7,}\b"  # digit-heavy runs (IDs, phone-shaped)
-)
-
 
 @lru_cache(maxsize=1)
 def _load_model():
@@ -109,16 +103,15 @@ def _classify_span(context: str, span_text: str) -> dict:
 def detect_sensitive_spans(text: str, already_found: List[TextSpan]) -> List[dict]:
     """Same interface/contract as llm_detector.detect_sensitive_spans."""
     already_texts = {s.text.lower() for s in already_found}
-    seen = set()
     results = []
 
-    for m in _CANDIDATE_PATTERN.finditer(text):
-        candidate = m.group(0).strip()
-        if len(candidate) < 3 or candidate.lower() in already_texts or candidate.lower() in seen:
+    # Same generator prepare_sft_dataset.py draws its negatives from, so the
+    # model is asked about the distribution it was trained to reject.
+    for start, end, candidate in iter_candidates(text):
+        if candidate.lower() in already_texts:
             continue
-        seen.add(candidate.lower())
 
-        context = context_window(text, m.start(), m.end(), CANDIDATE_CONTEXT_WINDOW)
+        context = context_window(text, start, end, CANDIDATE_CONTEXT_WINDOW)
         classification = _classify_span(context, candidate)
         if classification.get("sensitive"):
             category = str(classification.get("category", "other"))

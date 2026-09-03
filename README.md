@@ -236,16 +236,29 @@ raising precision from 0.182 to 0.307 at zero recall cost. Adding
 contrastive "this reference is *not* a person" pairs taught the model to
 stop flagging every capitalised phrase.
 
-**Why the local model over-flags so heavily** is architectural, not a matter
-of model size. The API detector does open-ended extraction: given a passage,
-it returns the spans it considers sensitive, about 8 per document. The
-fine-tuned model is a *classifier* over `(context, span)` pairs — it cannot
-propose spans, so `local_model_detector.py` has to feed it candidates from a
-capitalised-phrase heuristic that yields ~38 per document, most of them
-company names, statute titles and sentence-initial words. Precision is capped
-by that proposer, not by the classifier. **Replacing the heuristic with a
-proper NER candidate generator is the highest-value next step** and would
-likely matter more than any further fine-tuning.
+**Why the local model over-flags** turned out to be a training-data bug, not
+model capacity. Two mismatches between training and inference:
+
+1. **Class balance.** SFT trained on a 1:1 positive/negative split, but only
+   ~20% of the candidates proposed at inference are real PII. The model
+   learned a 50% prior and applied it to a 20% world.
+2. **Negative distribution — the larger problem.** Negatives were sampled as
+   arbitrary word n-grams (`"business focuses on developing"`), while
+   inference candidates are capitalised entity phrases (`"Suryam Tech
+   Solutions Ltd"`, `"Companies Act"`, `"Gurgaon"`). The model was never shown
+   a company name labelled *not sensitive*, so it had no basis for rejecting
+   one.
+
+That second point also explains why DPO helped as much as it did: its
+contrastive pairs (`"the Borrower"`, `"the Employee"`) were the first
+reference-shaped negatives the model ever saw, and they removed 139 false
+positives on their own.
+
+Note the proposer bounds **recall**, not precision — a perfect classifier
+would simply reject the ~32 non-PII candidates per document and score high
+precision anyway. `app/detection/candidates.py` now defines candidate
+generation once and both training and inference import it, so the two cannot
+drift apart again.
 
 Reproduce:
 ```bash
