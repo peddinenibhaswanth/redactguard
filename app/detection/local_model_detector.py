@@ -23,15 +23,25 @@ import re
 from functools import lru_cache
 from typing import List
 
-from app.config import CONFIDENCE_THRESHOLD
+from app.config import CONFIDENCE_THRESHOLD, LOCAL_ADAPTER_PATH
 from app.detection.base import FlaggedSpan, build_page_text_index, merge_bbox
 from app.extraction.base import ExtractedDocument, TextSpan
 from app.llm_client import strip_fences
 from phase3_finetune.prompt_template import SYSTEM_MSG, context_window
 
 BASE_MODEL_NAME = "Qwen/Qwen2.5-0.5B-Instruct"
-ADAPTER_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "phase3_finetune", "final_adapter")
+ADAPTER_PATH = LOCAL_ADAPTER_PATH
 CANDIDATE_CONTEXT_WINDOW = 80
+
+# The fine-tuned model occasionally emits a category outside the label set it
+# was trained on (an observed DPO checkpoint produced "indication" instead of
+# "indirect_reference"). Anything unrecognised is mapped to "other" rather
+# than propagated, so the report's category counts stay meaningful - the
+# sensitive/not-sensitive verdict is unaffected either way.
+VALID_CATEGORIES = {
+    "name", "address", "indirect_reference", "email", "pan", "aadhaar",
+    "ifsc", "phone", "date_of_birth", "none", "other",
+}
 
 _CANDIDATE_PATTERN = re.compile(
     r"(?:[A-Z][a-zA-Z']*\s?){1,4}"  # capitalized phrases (names, places)
@@ -111,10 +121,11 @@ def detect_sensitive_spans(text: str, already_found: List[TextSpan]) -> List[dic
         context = context_window(text, m.start(), m.end(), CANDIDATE_CONTEXT_WINDOW)
         classification = _classify_span(context, candidate)
         if classification.get("sensitive"):
+            category = str(classification.get("category", "other"))
             results.append(
                 {
                     "text": candidate,
-                    "category": classification.get("category", "other"),
+                    "category": category if category in VALID_CATEGORIES else "other",
                     "confidence": float(classification.get("confidence", 0.5)),
                 }
             )

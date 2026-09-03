@@ -32,3 +32,11 @@ MAX_REDACT_RETRIES = int(os.getenv("MAX_REDACT_RETRIES", "2"))
 OCR_TEXT_LEN_THRESHOLD = 20
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "outputs")
+
+# Which fine-tuned LoRA adapter app/detection/local_model_detector.py loads.
+# Overridable so the SFT-only and SFT+DPO checkpoints can be evaluated
+# against each other without editing code.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOCAL_ADAPTER_PATH = os.getenv(
+    "LOCAL_ADAPTER_PATH", os.path.join(_REPO_ROOT, "phase3_finetune", "final_adapter")
+)

@@ -22,7 +22,7 @@ import time
 
 import pymupdf as fitz
 
-from app.config import CONFIDENCE_THRESHOLD
+from app.config import CONFIDENCE_THRESHOLD, LOCAL_ADAPTER_PATH
 from app.detection.base import FlaggedSpan, build_page_text_index, merge_bbox, spans_covering_range
 from app.detection.llm_detector import detect_llm_spans
 from app.detection.regex_detector import detect_regex_spans
@@ -69,7 +69,21 @@ def _predicted_spans_with_offsets(text: str, flagged: list) -> list:
     return predicted
 
 
-def run_detection_eval(doc_ids: list) -> dict:
+def _get_detector(name: str):
+    """Returns the context-detector to pair with the regex pass. Both satisfy
+    the same (doc, already_found) -> List[FlaggedSpan] contract, which is the
+    whole point of the Phase 1 / Phase 3 interface being identical."""
+    if name == "api":
+        return detect_llm_spans
+    if name == "local":
+        from app.detection.local_model_detector import detect_local_model_spans
+
+        return detect_local_model_spans
+    raise ValueError(f"unknown detector {name!r}")
+
+
+def run_detection_eval(doc_ids: list, detector: str = "api") -> dict:
+    detect_context_spans = _get_detector(detector)
     all_tp = all_fp = all_fn = 0
     docs_predicted_spans = []
     per_doc_results = []
@@ -83,8 +97,8 @@ def run_detection_eval(doc_ids: list) -> dict:
 
         fake_doc = _text_to_fake_document(text, doc_id)
         regex_spans = detect_regex_spans(fake_doc)
-        llm_spans = detect_llm_spans(fake_doc, already_found=regex_spans)
-        flagged = regex_spans + llm_spans
+        context_spans = detect_context_spans(fake_doc, already_found=regex_spans)
+        flagged = regex_spans + context_spans
 
         predicted = _predicted_spans_with_offsets(text, flagged)
         ground_truth = label["ground_truth_spans"]
@@ -199,7 +213,22 @@ def run_verification_eval(doc_ids: list, out_dir: str = "eval/_tmp_pdfs") -> dic
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=None, help="Cap number of docs (for a quick smoke run).")
+    parser.add_argument(
+        "--detector", default="api", choices=["api", "local"],
+        help="Context detector to pair with regex: 'api' = Gemini/Groq (Phase 1), "
+             "'local' = fine-tuned adapter (Phase 3).",
+    )
+    parser.add_argument(
+        "--out", default=None,
+        help=f"Where to write results (default {RESULTS_PATH}).",
+    )
+    parser.add_argument(
+        "--skip-verification", action="store_true",
+        help="Skip the verification-catch-rate pass. It exercises redact/verify, "
+             "which is detector-independent, so it only needs running once.",
+    )
     args = parser.parse_args()
+    results_path = args.out or RESULTS_PATH
 
     doc_ids = sorted(os.path.splitext(os.path.basename(p))[0] for p in glob.glob(os.path.join(DATA_DOCS_DIR, "*.txt")))
     if args.limit:
@@ -211,31 +240,42 @@ def main():
             f"`python -m eval.generate_synthetic_data --n 50` first."
         )
 
-    print(f"Running eval over {len(doc_ids)} synthetic documents...")
+    print(f"Running eval over {len(doc_ids)} synthetic documents (detector={args.detector})...")
 
-    detection_results = run_detection_eval(doc_ids)
-    verification_results = run_verification_eval(doc_ids)
+    t0 = time.time()
+    detection_results = run_detection_eval(doc_ids, detector=args.detector)
+    detection_seconds = time.time() - t0
+
+    verification_results = (
+        None if args.skip_verification else run_verification_eval(doc_ids)
+    )
 
     results = {
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "detector": args.detector,
+        "adapter_path": LOCAL_ADAPTER_PATH if args.detector == "local" else None,
         "n_documents": len(doc_ids),
         "confidence_threshold": CONFIDENCE_THRESHOLD,
         "detection": {k: v for k, v in detection_results.items() if k != "per_doc"},
+        "detection_seconds_total": round(detection_seconds, 1),
+        "detection_seconds_per_doc": round(detection_seconds / len(doc_ids), 2),
         "verification": verification_results,
         "per_doc_detection": detection_results["per_doc"],
     }
 
-    os.makedirs("eval", exist_ok=True)
-    with open(RESULTS_PATH, "w", encoding="utf-8") as f:
+    os.makedirs(os.path.dirname(results_path) or ".", exist_ok=True)
+    with open(results_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
 
     print(f"\nPrecision: {detection_results['precision']:.3f}")
     print(f"Recall:    {detection_results['recall']:.3f}")
     print(f"F1:        {detection_results['f1']:.3f}")
     print(f"Human review rate: {detection_results['human_review_rate']:.3f}")
-    print(f"Verification catch rate: {verification_results['verification_catch_rate']}")
-    print(f"False alarm rate: {verification_results['false_alarm_rate']}")
-    print(f"\nSaved {RESULTS_PATH}")
+    print(f"Detection latency: {results['detection_seconds_per_doc']}s/doc")
+    if verification_results:
+        print(f"Verification catch rate: {verification_results['verification_catch_rate']}")
+        print(f"False alarm rate: {verification_results['false_alarm_rate']}")
+    print(f"\nSaved {results_path}")
 
 
 if __name__ == "__main__":
