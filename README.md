@@ -206,17 +206,53 @@ Then swap the detector in `app/graph/pipeline_graph.py`:
 ```python
 from app.detection.local_model_detector import detect_local_model_spans as detect_llm_spans
 ```
-Re-run `eval/run_eval.py` unchanged and compare `results_phase1.json` vs
-`results_phase3.json` — that comparison table (precision/recall/F1, latency,
-offline capability) is the actual Phase 3 deliverable, not the training run.
+### Phase 3 results — API vs fine-tuned local model
 
-**Honest limitation:** the API-model detector performs open-ended
-extraction ("find all sensitive spans in this text"). The fine-tuned model
-was trained as a classifier on a `(context, span)` pair, so it can't
-propose spans on its own — `local_model_detector.py` uses a lightweight
-candidate-span heuristic ahead of classification, which will under-propose
-relative to the API model's free-form extraction. This tradeoff is exactly
-what the Phase 1 vs Phase 3 comparison table is meant to surface honestly.
+All three configurations measured on the **same 12 documents**, regex pass
+identical, only the context detector swapped:
+
+| | API (Gemini) | SFT only | SFT + DPO |
+|---|---|---|---|
+| Precision | **0.719** | 0.182 | 0.307 |
+| Recall | **0.972** | 0.873 | 0.873 |
+| F1 | **0.826** | 0.301 | 0.454 |
+| Spans predicted / doc | 8.0 | 28.4 | 16.8 |
+| False positives | **27** | 279 | 140 |
+| Latency | **5.2 s/doc** | 179.0 s/doc | 160.4 s/doc |
+| Runs offline | ✗ | ✓ | ✓ |
+
+(ground truth: 5.9 spans/doc · `eval/results_subset_*.json`)
+
+**The API model wins on quality and speed; the local model's only advantage
+is running offline.** That is the honest result, and it is the one worth
+reporting — a 0.5B model on CPU was never going to beat Gemini, and the
+useful output of Phase 3 is knowing the size of the gap rather than assuming
+it.
+
+**DPO worked, but not the way the design predicted.** It was intended to make
+the model flag ambiguous references more readily. What it actually did was
+halve false positives — 279 → 140 with true positives unchanged at 62 —
+raising precision from 0.182 to 0.307 at zero recall cost. Adding
+contrastive "this reference is *not* a person" pairs taught the model to
+stop flagging every capitalised phrase.
+
+**Why the local model over-flags so heavily** is architectural, not a matter
+of model size. The API detector does open-ended extraction: given a passage,
+it returns the spans it considers sensitive, about 8 per document. The
+fine-tuned model is a *classifier* over `(context, span)` pairs — it cannot
+propose spans, so `local_model_detector.py` has to feed it candidates from a
+capitalised-phrase heuristic that yields ~38 per document, most of them
+company names, statute titles and sentence-initial words. Precision is capped
+by that proposer, not by the classifier. **Replacing the heuristic with a
+proper NER candidate generator is the highest-value next step** and would
+likely matter more than any further fine-tuning.
+
+Reproduce:
+```bash
+python -m eval.run_eval --limit 12 --detector api  --out eval/results_subset_api.json
+LOCAL_ADAPTER_PATH=phase3_finetune/final_adapter \
+  python -m eval.run_eval --limit 12 --detector local --skip-verification --out eval/results_phase3.json
+```
 
 ## Known limitations
 

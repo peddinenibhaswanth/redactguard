@@ -23,10 +23,11 @@ most candidates cannot claim.
   deliberately-broken (overlay-only) redactions into ~15% of eval runs and
   measuring a **100% catch rate with 0 false alarms**.
 
-- Fine-tuned Qwen2.5-0.5B with **QLoRA (SFT + DPO)** on a T4 to replace the
-  API detector with an offline local model behind an identical interface;
-  measured both against the API baseline and **reported DPO as a negative
-  result** after it degraded classification accuracy, with root-cause analysis.
+- Fine-tuned Qwen2.5-0.5B with **QLoRA (SFT + DPO)** on a free-tier T4 to
+  replace the API detector with an offline local model behind an identical
+  interface; DPO **halved false positives (279 → 140) at zero recall cost**,
+  lifting F1 from 0.301 to 0.454, and the API-vs-local comparison is reported
+  with its real tradeoffs rather than only the favourable numbers.
 
 - Shipped with a **live Streamlit demo**, FastAPI service with upload
   validation, Dockerfile, pytest suite and GitHub Actions CI.
@@ -38,8 +39,10 @@ most candidates cannot claim.
 - ❌ "Ensures documents never leave your machine" — only true of the Phase 3
   local-model configuration. Phase 1/2 send text to Gemini/Groq. Scope the
   claim or drop it.
-- ❌ "Fine-tuned an LLM to improve PII detection" — the fine-tuned model did
-  not beat the API model. Say what actually happened; it is a better story.
+- ❌ "Fine-tuned an LLM to improve PII detection" — the fine-tuned model does
+  **not** beat the API model (F1 0.454 vs 0.826) and is ~30x slower on CPU.
+  DPO improved the local model over SFT alone; it did not close the gap to
+  Gemini. Its one real advantage is running offline.
 
 ---
 
@@ -134,23 +137,28 @@ decision to depend on the input.
 whether your task is actually learnable-by-shortcut before believing the
 number.
 
-### Why DPO still degraded the model
+### Judging a model on a biased spot check (the mistake worth admitting)
 
-Even with balanced pairs, DPO hurt. The mechanism: in every prefer-ignore
-pair, the *rejected* string was `{"sensitive": true, ...}`, so DPO applied
-systematic downward pressure on "true" outputs globally rather than teaching
-input-dependent discrimination. The training metrics show it —
-`rewards/chosen` went **negative**, meaning the chosen responses became less
-likely too, just less so than the rejected ones.
+Before running the eval I sanity-checked SFT-only against SFT+DPO on six
+hand-picked examples. SFT scored 5/6, DPO 3/6, and DPO missed two obvious
+names. The obvious read was that DPO had damaged the model.
 
-The deeper point: **DPO is a poor fit for a binary-output classification
-task.** With only two possible completions, the preference collapses toward a
-constant, and shifting it drags the whole output distribution. SFT with
-balanced labels already encodes that bias more directly and with less
-collateral damage.
+The eval said the opposite. On 12 documents DPO **halved false positives
+(279 → 140) with true positives unchanged (62)**, taking precision from 0.182
+to 0.307 and F1 from 0.301 to 0.454.
 
-Being able to say that — and show the numbers behind it — demonstrates more
-judgement than a working DPO run would have.
+The spot check was misleading because four of its six cases were positives —
+roughly 67% — whereas the real distribution is about six true spans among 38
+candidate spans, roughly 16%. DPO's entire purpose was to suppress
+over-flagging. Measured on a positive-heavy sample, doing its job correctly
+looks like damage.
+
+**Lesson to state:** a hand-picked spot check is not an evaluation. If the
+class balance of your sample does not match deployment, it can invert your
+conclusion — and it did here. This is also why the eval set is generated with
+ground truth attached rather than assembled by hand.
+
+If asked "did anything surprise you", this is the answer to give.
 
 ### QLoRA adapters across quantization levels
 

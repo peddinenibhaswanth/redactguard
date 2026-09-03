@@ -1,0 +1,93 @@
+{
+  "timestamp": "2026-09-03T12:10:32",
+  "detector": "local",
+  "adapter_path": "C:/ML/Projects/LnagGraph/phase3_finetune/sft_only_adapter",
+  "n_documents": 12,
+  "confidence_threshold": 0.7,
+  "detection": {
+    "precision": 0.18181818181818182,
+    "recall": 0.8732394366197183,
+    "f1": 0.30097087378640774,
+    "tp": 62,
+    "fp": 279,
+    "fn": 9,
+    "human_review_rate": 1.0
+  },
+  "detection_seconds_total": 2148.0,
+  "detection_seconds_per_doc": 179.0,
+  "verification": null,
+  "per_doc_detection": [
+    {
+      "doc_id": "doc_000",
+      "tp": 4,
+      "fp": 22,
+      "fn": 1
+    },
+    {
+      "doc_id": "doc_001",
+      "tp": 6,
+      "fp": 26,
+      "fn": 1
+    },
+    {
+      "doc_id": "doc_002",
+      "tp": 5,
+      "fp": 20,
+      "fn": 1
+    },
+    {
+      "doc_id": "doc_003",
+      "tp": 5,
+      "fp": 29,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_004",
+      "tp": 5,
+      "fp": 27,
+      "fn": 1
+    },
+    {
+      "doc_id": "doc_005",
+      "tp": 6,
+      "fp": 23,
+      "fn": 1
+    },
+    {
+      "doc_id": "doc_006",
+      "tp": 5,
+      "fp": 25,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_007",
+      "tp": 6,
+      "fp": 20,
+      "fn": 1
+    },
+    {
+      "doc_id": "doc_008",
+      "tp": 5,
+      "fp": 23,
+      "fn": 0
+    },
+    {
+      "doc_id": "doc_009",
+      "tp": 5,
+      "fp": 22,
+      "fn": 1
+    },
+    {
+      "doc_id": "doc_010",
+      "tp": 5,
+      "fp": 18,
+      "fn": 1
+    },
+    {
+      "doc_id": "doc_011",
+      "tp": 5,
+      "fp": 24,
+      "fn": 1
+    }
+  ]
+}
