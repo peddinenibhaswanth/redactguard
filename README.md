@@ -75,17 +75,25 @@ python -m eval.generate_synthetic_data --n 50
 python -m eval.run_eval
 ```
 
-Measured on 37 synthetic documents (`eval/results_phase1.json`, generated
-2026-09-02):
+Measured on the 17-document held-out set — the same documents Phase 3 is
+scored on, so the two sections are directly comparable
+(`eval/results_heldout_api.json`):
 
 | Metric | Value |
 |---|---|
-| Precision | 0.798 |
-| Recall | 0.946 |
-| F1 | 0.865 |
-| Verification catch rate | 1.000 (7/7 deliberately-broken cases caught) |
-| False alarm rate | 0.000 (0/30 clean cases incorrectly flagged) |
-| Human-review rate | 0.811 |
+| Precision | 0.800 |
+| Recall | 0.990 |
+| F1 | 0.885 |
+| Verification catch rate | 1.000 |
+| False alarm rate | 0.000 |
+| Human-review rate | 0.765 |
+| Detection latency | 8.3 s/doc |
+
+An earlier 37-document run (`eval/results_phase1.json`) scored precision
+0.798 / recall 0.946 / F1 0.865 — consistent, and kept for reference. The
+API detector is not fine-tuned on anything, so held-out versus not makes no
+difference to *its* validity; the held-out set is used here purely so the
+Phase 1 and Phase 3 numbers sit on identical documents.
 
 The **verification catch rate** is the project's differentiating number: it
 measures whether the verifier actually catches deliberately-broken
@@ -220,64 +228,63 @@ from app.detection.local_model_detector import detect_local_model_spans as detec
 ```
 ### Phase 3 results — API vs fine-tuned local model
 
-All three configurations measured on the **same 12 documents**, regex pass
-identical, only the context detector swapped:
+All three configurations measured on the **same 17 held-out documents**
+(101 ground-truth spans) that the fine-tuned models were **never trained on**.
+The regex pass is identical throughout; only the context detector is swapped.
 
-| | API (Gemini) | SFT only | SFT + DPO |
+| | API (Gemini/Groq) | SFT only | SFT + DPO |
 |---|---|---|---|
-| Precision | **0.719** | 0.182 | 0.307 |
-| Recall | **0.972** | 0.873 | 0.873 |
-| F1 | **0.826** | 0.301 | 0.454 |
-| Spans predicted / doc | 8.0 | 28.4 | 16.8 |
-| False positives | **27** | 279 | 140 |
-| Latency | **5.2 s/doc** | 179.0 s/doc | 160.4 s/doc |
+| Precision | 0.800 | 0.814 | **0.900** |
+| Recall | **0.990** | 0.475 | 0.446 |
+| F1 | **0.885** | 0.600 | 0.596 |
+| True / false positives | 100 / 25 | 48 / 11 | 45 / 5 |
+| Missed spans | **1** | 53 | 56 |
 | Runs offline | ✗ | ✓ | ✓ |
 
-(ground truth: 5.9 spans/doc · `eval/results_subset_*.json`)
+`eval/results_heldout_*.json` · every file records `held_out_from_training: true`
 
-**The API model wins on quality and speed; the local model's only advantage
-is running offline.** That is the honest result, and it is the one worth
-reporting — a 0.5B model on CPU was never going to beat Gemini, and the
-useful output of Phase 3 is knowing the size of the gap rather than assuming
-it.
+**The API model wins decisively, and recall is why.** It misses 1 span out of
+101; the fine-tuned models miss more than half. For a redaction tool that
+gap is disqualifying — a missed identifier is a leak, while a false positive
+is a redundant black box. The local model's only real advantage is running
+offline.
 
-**DPO worked, but not the way the design predicted.** It was intended to make
-the model flag ambiguous references more readily. What it actually did was
-halve false positives — 279 → 140 with true positives unchanged at 62 —
-raising precision from 0.182 to 0.307 at zero recall cost. Adding
-contrastive "this reference is *not* a person" pairs taught the model to
-stop flagging every capitalised phrase.
+**DPO did what it was asked to.** It raised precision 0.814 → 0.900 and cut
+false positives from 11 to 5. F1 barely moved (0.600 → 0.596) because the
+precision gain was paid for in recall.
 
-**Why the local model over-flags** turned out to be a training-data bug, not
-model capacity. Two mismatches between training and inference:
+**Where the recall goes.** The candidate proposer offers **96%** of
+ground-truth spans to the classifier (97 of 101), so the ceiling is not the
+bottleneck — the classifier rejects roughly half of what it is correctly
+shown. That traces to a deliberate choice: `NEGATIVE_RATIO = 3` in
+`prepare_sft_dataset.py`. An earlier 1:1 ratio produced the opposite failure
+(precision 0.182, 279 false positives on 12 documents) because training
+negatives were arbitrary word n-grams while inference candidates are
+capitalised entities. Drawing negatives from the same generator used at
+inference fixed precision emphatically; setting the ratio to 3:1 overshot
+into under-flagging. **2:1 is the obvious next experiment** and is a
+one-line change plus a retrain.
 
-1. **Class balance.** SFT trained on a 1:1 positive/negative split, but only
-   ~20% of the candidates proposed at inference are real PII. The model
-   learned a 50% prior and applied it to a 20% world.
-2. **Negative distribution — the larger problem.** Negatives were sampled as
-   arbitrary word n-grams (`"business focuses on developing"`), while
-   inference candidates are capitalised entity phrases (`"Suryam Tech
-   Solutions Ltd"`, `"Companies Act"`, `"Gurgaon"`). The model was never shown
-   a company name labelled *not sensitive*, so it had no basis for rejecting
-   one.
-
-That second point also explains why DPO helped as much as it did: its
-contrastive pairs (`"the Borrower"`, `"the Employee"`) were the first
-reference-shaped negatives the model ever saw, and they removed 139 false
-positives on their own.
-
-Note the proposer bounds **recall**, not precision — a perfect classifier
-would simply reject the ~32 non-PII candidates per document and score high
-precision anyway. `app/detection/candidates.py` now defines candidate
-generation once and both training and inference import it, so the two cannot
-drift apart again.
+**On latency:** the held-out run reports 1000-1460 s/doc, but that number is
+inflated — lint, tests and a pipeline run were executing on the same CPU
+concurrently. The clean measurement from an uncontended run is **160-190
+s/doc**, against **8.3 s/doc** for the API. Either way the local model is
+roughly 20x slower on CPU, and that is the honest comparison.
 
 Reproduce:
 ```bash
-python -m eval.run_eval --limit 12 --detector api  --out eval/results_subset_api.json
-LOCAL_ADAPTER_PATH=phase3_finetune/final_adapter \
-  python -m eval.run_eval --limit 12 --detector local --skip-verification --out eval/results_phase3.json
+python -m eval.run_eval --detector api --docs-dir data/heldout_docs   --labels-dir data/heldout_labels --out eval/results_heldout_api.json
+
+LOCAL_ADAPTER_PATH=phase3_finetune/final_adapter   python -m eval.run_eval --detector local --skip-verification   --docs-dir data/heldout_docs --labels-dir data/heldout_labels   --out eval/results_heldout_dpo.json
 ```
+
+**Earlier Phase 3 numbers in this repo's history were measured on training
+data.** `prepare_sft_dataset.py` builds from every document in
+`data/synthetic_docs`, and the eval scored documents from that same
+directory, so the models were tested on spans they had memorised. The
+held-out corpus above exists to fix that, `run_eval` now warns when a local
+adapter is scored on its own training data, and every results file records
+whether it was held out.
 
 ## Known limitations
 

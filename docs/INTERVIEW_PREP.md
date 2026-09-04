@@ -15,7 +15,7 @@ most candidates cannot claim.
 - Built a document PII-redaction pipeline (LangGraph, PyMuPDF, Gemini/Groq)
   combining regex detection for structured identifiers with an LLM pass for
   context-dependent spans (names, addresses, indirect references), reaching
-  **F1 0.865 / recall 0.946** on a 37-document labelled evaluation set.
+  **F1 0.885 / recall 0.990** on a 17-document held-out labelled set.
 
 - Designed a **redaction verification stage** that re-extracts the output PDF
   and confirms flagged text is unrecoverable, routing failures back through
@@ -23,14 +23,15 @@ most candidates cannot claim.
   deliberately-broken (overlay-only) redactions into ~15% of eval runs and
   measuring a **100% catch rate with 0 false alarms**.
 
-- Fine-tuned Qwen2.5-0.5B with **QLoRA (SFT + DPO)** on a free-tier T4 to
-  replace the API detector with an offline local model behind an identical
-  interface; DPO **halved false positives (279 → 140) at zero recall cost**,
-  lifting F1 from 0.301 to 0.454, and the API-vs-local comparison is reported
-  with its real tradeoffs rather than only the favourable numbers.
+- Fine-tuned Qwen2.5-0.5B with **QLoRA (SFT + DPO)** on a free-tier T4 as an
+  offline drop-in for the API detector behind an identical interface;
+  diagnosed a train/inference distribution mismatch that had crushed
+  precision to 0.182, and fixing it (drawing training negatives from the same
+  candidate generator used at inference) raised precision to **0.900** on
+  held-out data.
 
 - Shipped with a **live Streamlit demo**, FastAPI service with upload
-  validation, Dockerfile, pytest suite and GitHub Actions CI.
+  validation, Dockerfile, 32-test pytest suite and GitHub Actions CI.
 
 ### Bullets to avoid
 
@@ -39,10 +40,11 @@ most candidates cannot claim.
 - ❌ "Ensures documents never leave your machine" — only true of the Phase 3
   local-model configuration. Phase 1/2 send text to Gemini/Groq. Scope the
   claim or drop it.
-- ❌ "Fine-tuned an LLM to improve PII detection" — the fine-tuned model does
-  **not** beat the API model (F1 0.454 vs 0.826) and is ~30x slower on CPU.
-  DPO improved the local model over SFT alone; it did not close the gap to
-  Gemini. Its one real advantage is running offline.
+- ❌ "Fine-tuned an LLM to improve PII detection" — it does **not** beat the
+  API model on held-out data (F1 0.596 vs 0.885) and is ~20x slower on CPU.
+  It beats Gemini on *precision* (0.900 vs 0.800) but misses more than half
+  the PII (recall 0.446 vs 0.990). Offline operation is its one real
+  advantage. Say that; the tradeoff is more interesting than a fake win.
 
 ---
 
@@ -81,11 +83,22 @@ explanation.
 
 Phase 1 uses Gemini for context-dependent detection. Phase 3 replaces that one
 node with a locally fine-tuned Qwen2.5-0.5B — same interface, so it is a
-one-import swap — trained with QLoRA on Colab's free T4: SFT first to teach
-the task, then DPO to bias toward flagging ambiguous references.
+one-import swap — trained with QLoRA on Colab's free T4: SFT to teach the
+task, then DPO to sharpen the ambiguous cases.
 
-The interesting part is that **DPO made it worse**, and I can explain why (see
-below). SFT worked; DPO regressed name detection. I reported both.
+Held out on 17 unseen documents: the local model reaches **precision 0.900,
+better than Gemini's 0.800**, but **recall 0.446 against Gemini's 0.990**. For
+a redaction tool that is disqualifying — a missed identifier is a leak, a
+false positive is a redundant black box. So the honest conclusion is that the
+local model is not a replacement; its only real advantage is running offline.
+
+The part worth talking about is *why* recall is low, because I can attribute
+it precisely: the candidate proposer offers 96% of ground-truth spans to the
+classifier, so the ceiling is not the bottleneck — the classifier rejects
+about half of what it is correctly shown. That traces to one hyperparameter,
+`NEGATIVE_RATIO = 3`. At 1:1 the model over-flagged catastrophically
+(precision 0.182); 3:1 overshot into under-flagging. 2:1 is the obvious next
+experiment.
 
 ---
 
@@ -143,22 +156,52 @@ Before running the eval I sanity-checked SFT-only against SFT+DPO on six
 hand-picked examples. SFT scored 5/6, DPO 3/6, and DPO missed two obvious
 names. The obvious read was that DPO had damaged the model.
 
-The eval said the opposite. On 12 documents DPO **halved false positives
-(279 → 140) with true positives unchanged (62)**, taking precision from 0.182
-to 0.307 and F1 from 0.301 to 0.454.
+The eval said the opposite: DPO **halved false positives with true positives
+unchanged**, and on held-out data it ends up the more precise model (0.900 vs
+0.814).
 
 The spot check was misleading because four of its six cases were positives —
 roughly 67% — whereas the real distribution is about six true spans among 38
-candidate spans, roughly 16%. DPO's entire purpose was to suppress
-over-flagging. Measured on a positive-heavy sample, doing its job correctly
-looks like damage.
+candidates, roughly 16%. DPO's entire purpose was to suppress over-flagging.
+Measured on a positive-heavy sample, doing its job correctly looks like
+damage.
 
 **Lesson to state:** a hand-picked spot check is not an evaluation. If the
 class balance of your sample does not match deployment, it can invert your
-conclusion — and it did here. This is also why the eval set is generated with
-ground truth attached rather than assembled by hand.
+conclusion — and it did here.
 
 If asked "did anything surprise you", this is the answer to give.
+
+### Testing on the training set (the one that would have burned me)
+
+The first Phase 3 numbers were measured on documents that were *in* the
+SFT/DPO training set — `prepare_sft_dataset.py` builds from every file in
+`data/synthetic_docs`, and the eval scored files from that same directory. All
+12 evaluation documents, and the exact spans in them, had been memorised.
+
+I caught it by checking overlap explicitly rather than assuming, then built a
+separate held-out corpus that training never reads. `run_eval` now prints a
+warning if a local adapter is scored on its own training data, and every
+results file records `held_out_from_training`.
+
+**Lesson to state:** the split has to be structural, not a convention you
+remember to follow. Two directories with a warning beats good intentions.
+
+### The bug in my own redaction code
+
+`local_model_detector` mapped detections with `str.find`, which returns only
+the first match. A name appearing three times in a contract produced one
+redaction box and left the other two legible — in a tool whose entire premise
+is that redaction failures are invisible. The verifier did not catch it
+either, because the span it was asked to check *had* been removed.
+
+The API detector already scanned every occurrence, so two implementations of
+the same step had silently diverged. Fixed by extracting one shared
+`map_results_to_flagged`, with a regression test that pins the repeated-name
+case.
+
+**Lesson to state:** duplicated logic in two places is a bug waiting for one
+of them to be updated.
 
 ### QLoRA adapters across quantization levels
 

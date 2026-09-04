@@ -3,7 +3,7 @@
 Living checklist. Updated as work completes so both of us can see what is
 done, what is running, and what is left.
 
-**Last updated:** 2026-09-04
+**Last updated:** 2026-09-04 — Phase 3 complete, all evals done.
 
 ---
 
@@ -24,44 +24,48 @@ done, what is running, and what is left.
 | Held-out test split (17 docs, 101 spans) | `data/heldout_docs/`, never used in training |
 | Interview prep + resume bullets | `docs/INTERVIEW_PREP.md` |
 
-### Measured results (clean, held-out where it matters)
+### Final measured results — 17 held-out documents, 101 spans
 
-**API detector (Gemini/Groq) on 17 held-out documents:**
-precision **0.800** · recall **0.990** · F1 **0.885** · 8.3 s/doc
-verification catch rate **1.0** · false alarm rate **0.0**
+All three configurations on the **same documents**, which the fine-tuned
+models were never trained on. Regex pass identical; only the context
+detector swapped.
 
-**Phase 1 on the original 37-document set:** F1 **0.865** (`eval/results_phase1.json`)
+| | API (Gemini/Groq) | SFT only | SFT + DPO |
+|---|---|---|---|
+| Precision | 0.800 | 0.814 | **0.900** |
+| Recall | **0.990** | 0.475 | 0.446 |
+| F1 | **0.885** | 0.600 | 0.596 |
+| Missed spans | **1** | 53 | 56 |
+| Runs offline | ✗ | ✓ | ✓ |
 
----
+Verification catch rate **1.000**, false alarm rate **0.000**.
 
-## 🔄 Running now
-
-- **SFT+DPO** local adapter on the 17 held-out documents (~55 min)
-- **SFT-only** local adapter on the same set (~55 min, queued after)
-
-These are CPU-bound and need no API quota. They produce the only Phase 3
-numbers that measure generalisation rather than memorisation.
+**Conclusion:** the API model wins decisively, and recall is why — it misses
+1 span in 101 where the local models miss more than half. For a redaction
+tool that is disqualifying. The local model's advantage is offline operation
+only. The recall shortfall is attributable: the candidate proposer reaches
+96% of ground-truth spans, so the classifier is rejecting about half of what
+it is correctly shown — a consequence of `NEGATIVE_RATIO = 3`.
 
 ---
 
 ## 📋 Remaining
 
-| # | Task | Owner | Est. |
-|---|---|---|---|
-| 1 | Write the three-way held-out comparison into the README | me | 15 min |
-| 2 | Update `INTERVIEW_PREP.md` bullets with final held-out numbers | me | 10 min |
-| 3 | Final consistency pass — every number in every doc traces to a results file | me | 15 min |
-| 4 | Hand over final resume bullets | me | — |
-| 5 | Paste bullets into your actual resume | **you** | — |
+| # | Task | Owner |
+|---|---|---|
+| 1 | Paste the resume bullets into your resume | **you** |
+
+Everything else is done.
 
 ### Optional, not blocking
 
-- Add a third provider (OpenRouter free tier) — `.env.example` documents it;
-  Cerebras was checked and needs billing
-- Retune `NEGATIVE_RATIO` in `prepare_sft_dataset.py` — the 3:1 ratio pushed
-  precision to 0.938 but halved recall; 2:1 may balance better (needs a
-  ~45 min Colab retrain)
-- Log actual false-positive/negative span texts per document, not just counts
+- **Retune `NEGATIVE_RATIO` 3 → 2** in `prepare_sft_dataset.py`. 1:1 gave
+  precision 0.182; 3:1 overshot to recall 0.446. Needs a ~45 min Colab
+  retrain. Would improve the Phase 3 numbers but not change the conclusion.
+- Add a third provider (OpenRouter free tier) — `.env.example` documents how;
+  Cerebras was checked on 2026-09-03 and returns HTTP 402 without billing.
+- Log actual false-positive/negative span texts per document, not just counts.
+- Test on genuinely long documents; the eval set is ~300-word excerpts.
 
 ---
 
