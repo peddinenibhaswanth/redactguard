@@ -12,7 +12,7 @@ from typing import List, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from app.config import MAX_REDACT_RETRIES, OUTPUT_DIR
+from app.config import BBOX_PADDING_PER_RETRY, MAX_REDACT_RETRIES, OUTPUT_DIR
 from app.detection.base import FlaggedSpan
 from app.detection.llm_detector import detect_llm_spans
 from app.detection.regex_detector import detect_regex_spans
@@ -79,9 +79,20 @@ def redact_node(state: PipelineState) -> dict:
     base_name = os.path.splitext(os.path.basename(state["input_path"]))[0]
     output_path = os.path.join(OUTPUT_DIR, f"{base_name}_redacted.pdf")
 
-    redact_pdf(state["working_pdf_path"], output_path, state["flagged_spans"])
+    # Widen the redaction boxes on each retry. Without this the retry edge is
+    # vacuous: redaction is deterministic, so redoing it with the same spans
+    # produces the same file and fails verification the same way. A box a
+    # fraction too tight for its glyphs is the usual reason text survives, so
+    # escalating the padding gives the retry something to actually change.
+    retry_count = state["retry_count"]
+    redact_pdf(
+        state["working_pdf_path"],
+        output_path,
+        state["flagged_spans"],
+        bbox_padding=retry_count * BBOX_PADDING_PER_RETRY,
+    )
 
-    return {"output_path": output_path, "retry_count": state["retry_count"] + 1}
+    return {"output_path": output_path, "retry_count": retry_count + 1}
 
 
 def verify_node(state: PipelineState) -> dict:

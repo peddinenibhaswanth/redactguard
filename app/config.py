@@ -42,6 +42,12 @@ PROVIDER_CHAIN = [
 # Cap on redact->verify retries before giving up and flagging for manual handling.
 MAX_REDACT_RETRIES = int(os.getenv("MAX_REDACT_RETRIES", "2"))
 
+# Points added to every side of a redaction box per retry. Redaction is
+# deterministic, so without escalation the graph's retry edge would redo
+# identical work and fail identically; widening the box addresses the usual
+# cause of a surviving glyph (a box slightly tighter than the text it covers).
+BBOX_PADDING_PER_RETRY = float(os.getenv("BBOX_PADDING_PER_RETRY", "1.5"))
+
 # Trigger for routing a PDF page to OCR instead of the direct text extractor.
 OCR_TEXT_LEN_THRESHOLD = 20
 

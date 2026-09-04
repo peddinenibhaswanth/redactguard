@@ -22,13 +22,29 @@ def redact_pdf(
     output_path: str,
     spans_to_redact: List[FlaggedSpan],
     simulate_failure: bool = False,
+    bbox_padding: float = 0.0,
 ) -> None:
+    """bbox_padding grows each redaction rectangle by that many points on
+    every side.
+
+    It exists to make the graph's retry edge mean something. Redaction is
+    deterministic, so re-running it with identical spans yields an identical
+    file and verification fails identically - the retry would just burn a
+    cycle. The common real cause of a surviving glyph is a bounding box a
+    fraction too tight for the text it covers, so each retry widens the box.
+    Over-redacting a neighbouring character is the right trade against
+    leaving PII legible.
+    """
     doc = fitz.open(input_path)
     for span in spans_to_redact:
         if span.page_num >= len(doc):
             continue
         page = doc[span.page_num]
-        page.add_redact_annot(span.bbox, fill=(0, 0, 0))
+        x0, y0, x1, y1 = span.bbox
+        if bbox_padding:
+            x0, y0 = x0 - bbox_padding, y0 - bbox_padding
+            x1, y1 = x1 + bbox_padding, y1 + bbox_padding
+        page.add_redact_annot((x0, y0, x1, y1), fill=(0, 0, 0))
 
     if not simulate_failure:
         for page in doc:
