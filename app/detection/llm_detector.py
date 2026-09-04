@@ -14,7 +14,7 @@ import json
 from typing import List
 
 from app.config import CONFIDENCE_THRESHOLD, LLM_DETECTOR_PROVIDER
-from app.detection.base import FlaggedSpan, build_page_text_index, merge_bbox
+from app.detection.base import FlaggedSpan, build_page_text_index, map_results_to_flagged
 from app.extraction.base import ExtractedDocument, TextSpan
 from app.llm_client import call_llm, strip_fences
 
@@ -152,36 +152,11 @@ def detect_llm_spans(
         page_already_found = [s for s in already_found if s.page_num == page_num]
 
         llm_results = detect_sensitive_spans(page_text, page_already_found, provider)
-
-        for item in llm_results:
-            needle = item["text"]
-            if not needle:
-                continue  # str.find("", pos) always returns pos - would spin forever below
-            search_start = 0
-            occurrence = 0
-            while True:
-                idx = page_text.find(needle, search_start)
-                if idx == -1:
-                    break
-                match_start, match_end = idx, idx + len(needle)
-                covering = [s for (start, end, s) in ranges if start < match_end and end > match_start]
-                if covering:
-                    bbox = merge_bbox(covering)
-                    confidence = item["confidence"]
-                    flagged.append(
-                        FlaggedSpan(
-                            text=needle,
-                            page_num=page_num,
-                            bbox=bbox,
-                            span_id=f"llm_{page_num}_{idx}_{occurrence}",
-                            category=item["category"],
-                            confidence=confidence,
-                            source="llm",
-                            needs_human_review=confidence < CONFIDENCE_THRESHOLD,
-                        )
-                    )
-                search_start = match_end
-                occurrence += 1
+        flagged.extend(
+            map_results_to_flagged(
+                llm_results, page_text, ranges, page_num, "llm", CONFIDENCE_THRESHOLD
+            )
+        )
 
     return flagged
 

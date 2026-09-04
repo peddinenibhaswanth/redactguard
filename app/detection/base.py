@@ -48,3 +48,55 @@ def spans_covering_range(
     ranges: List[Tuple[int, int, TextSpan]], match_start: int, match_end: int
 ) -> List[TextSpan]:
     return [s for (start, end, s) in ranges if start < match_end and end > match_start]
+
+
+def map_results_to_flagged(
+    results: List[dict],
+    page_text: str,
+    ranges: List[Tuple[int, int, TextSpan]],
+    page_num: int,
+    source: str,
+    confidence_threshold: float,
+) -> List["FlaggedSpan"]:
+    """Turns {text, category, confidence} detections into FlaggedSpans, one
+    per *occurrence* of the detected string on the page.
+
+    Every occurrence matters: a name appearing three times in a contract must
+    be redacted three times. Mapping only the first match - which is what
+    str.find returns - leaves the rest legible in the output PDF, and the
+    document still looks redacted. Shared by the API and local-model
+    detectors so the two cannot diverge on it again.
+    """
+    flagged: List[FlaggedSpan] = []
+    for item in results:
+        needle = item["text"]
+        if not needle:
+            # str.find("", pos) returns pos, so an empty needle never
+            # advances the cursor and the loop below would not terminate.
+            continue
+
+        search_start = 0
+        occurrence = 0
+        while True:
+            idx = page_text.find(needle, search_start)
+            if idx == -1:
+                break
+            match_end = idx + len(needle)
+            covering = spans_covering_range(ranges, idx, match_end)
+            if covering:
+                confidence = item["confidence"]
+                flagged.append(
+                    FlaggedSpan(
+                        text=needle,
+                        page_num=page_num,
+                        bbox=merge_bbox(covering),
+                        span_id=f"{source}_{page_num}_{idx}_{occurrence}",
+                        category=item["category"],
+                        confidence=confidence,
+                        source=source,
+                        needs_human_review=confidence < confidence_threshold,
+                    )
+                )
+            search_start = match_end
+            occurrence += 1
+    return flagged
