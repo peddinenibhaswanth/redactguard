@@ -1,7 +1,9 @@
+import pytest
+
 from app.detection.regex_detector import detect_regex_spans
 from app.extraction.pdf_extractor import extract_pdf
 from app.redaction.redactor import redact_pdf
-from app.verification.verifier import verify_redaction
+from app.verification.verifier import _normalize, verify_redaction
 
 
 def _flagged_spans(sample_pdf):
@@ -31,3 +33,25 @@ def test_verifier_catches_overlay_only_fake_redaction(sample_pdf, tmp_path):
 
     assert result["passed"] is False
     assert set(result["leftover_spans"]) == {s.text for s in flagged}
+
+
+@pytest.mark.parametrize(
+    "extracted_text, description",
+    [
+        ("Contact Rajesh  Mehta today", "re-extraction collapsed to a double space"),
+        ("Contact Rajesh\nMehta today", "re-extraction split across a line break"),
+        ("Contact  Rajesh Mehta  today", "extra surrounding whitespace"),
+    ],
+)
+def test_whitespace_artefacts_do_not_hide_a_leftover(extracted_text, description):
+    """PDF re-extraction does not guarantee the same spacing as the input, so
+    an exact substring test can report PASSED while the PII is still readable
+    - a false negative in the safety net itself, which is the worst failure
+    this project can have."""
+    assert _normalize("Rajesh Mehta") in _normalize(extracted_text), description
+
+
+def test_normalization_does_not_invent_leftovers():
+    """The flip side: genuinely removed text must still read as removed, or
+    every document would loop through the retry cap for nothing."""
+    assert _normalize("Rajesh Mehta") not in _normalize("Contact Someone Else today")
