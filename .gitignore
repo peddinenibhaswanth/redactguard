@@ -28,6 +28,7 @@ outputs/
 # the live demo uploads to try it, and it's regenerable via
 # samples/generate_sample.py.
 !samples/*.pdf
+docs/
 
 # eval results are resume evidence - keep them tracked
 !eval/results_*.json
